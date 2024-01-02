@@ -15,6 +15,7 @@ from threestudio.utils.misc import barrier, cleanup, get_rank
 from threestudio.utils.ops import shifted_cosine_decay, shifted_expotional_decay
 from threestudio.utils.typing import *
 
+from threestudio.models.prompt_processors.frozendinov2encoder import FrozenDinoV2Encoder
 
 def hash_prompt(model: str, prompt: str) -> str:
     import hashlib
@@ -54,9 +55,17 @@ class PromptProcessorOutput:
         elevation: Float[Tensor, "B"],
         azimuth: Float[Tensor, "B"],
         camera_distances: Float[Tensor, "B"],
+        guidance_images: Float[Tensor, "B 3 224 224"],
         view_dependent_prompting: bool = True,
     ) -> Float[Tensor, "BB N Nf"]:
+        dinov2encoder = FrozenDinoV2Encoder().to(guidance_images)
         batch_size = elevation.shape[0]
+        negative_images = torch.zeros_like(guidance_images).to(guidance_images)
+        null_images = torch.zeros_like(guidance_images).to(guidance_images)
+
+        positive_guidance = dinov2encoder(guidance_images)
+        negative_guidance = dinov2encoder(negative_images)
+        null_guidance = dinov2encoder(null_images)
 
         if view_dependent_prompting:
             # Get direction
@@ -78,7 +87,9 @@ class PromptProcessorOutput:
         null_embeddings = self.null_embeddings.expand(  # type: ignore
             batch_size, -1, -1
         )
-
+        text_embeddings = torch.cat((text_embeddings, positive_guidance),dim=1)
+        uncond_text_embeddings = torch.cat((uncond_text_embeddings, negative_guidance),dim=1)
+        null_embeddings = torch.cat((null_embeddings, null_guidance),dim=1)
         # IMPORTANT: we return (cond, uncond(neg), null), which is in different order than other implementations!
         return torch.cat([text_embeddings, uncond_text_embeddings, null_embeddings], dim=0)
 
@@ -192,7 +203,7 @@ class PromptProcessor(BaseObject):
         front_threshold: float = 45.0
         back_threshold: float = 45.0
         view_dependent_prompt_front: bool = False
-        use_cache: bool = True
+        use_cache: bool = False #True
         spawn: bool = True
 
         # perp neg
@@ -226,7 +237,6 @@ class PromptProcessor(BaseObject):
 
     def configure(self) -> None:
         self._cache_dir = ".threestudio_cache/text_embeddings"  # FIXME: hard-coded path
-
         # view-dependent text embeddings
         self.directions: List[DirectionConfig]
         if self.cfg.view_dependent_prompt_front:
@@ -356,7 +366,10 @@ class PromptProcessor(BaseObject):
             + self.negative_prompts_vd
             + [""]
         )
+        
         prompts_to_process = []
+        #TODO: read guidance_images
+        # guidance_images = torch.zeros(12,3,224,224)
         for prompt in all_prompts:
             if self.cfg.use_cache:
                 # some text embeddings are already in cache
@@ -371,7 +384,7 @@ class PromptProcessor(BaseObject):
                     )
                     continue
             prompts_to_process.append(prompt)
-
+        # import pdb; pdb.set_trace()
         if len(prompts_to_process) > 0:
             if self.cfg.spawn:
                 ctx = mp.get_context("spawn")
@@ -380,6 +393,7 @@ class PromptProcessor(BaseObject):
                     args=(
                         self.cfg.pretrained_model_name_or_path,
                         prompts_to_process,
+                        # guidance_images,
                         self._cache_dir,
                     ),
                 )

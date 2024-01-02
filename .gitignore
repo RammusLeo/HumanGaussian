@@ -1,0 +1,6 @@
+output/
+*.pyc
+*.threestudio_cache
+videos/
+dinov2/
+gaussiansplatting/

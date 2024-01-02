@@ -642,6 +642,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         original_size: Optional[Tuple[int, int]] = None,
         crops_coords_top_left: Tuple[int, int] = (0, 0),
         target_size: Optional[Tuple[int, int]] = (1024, 1024),
+        # target_size: Optional[Tuple[int, int]] = (768, 768),
     ):
         r"""
         Function invoked when calling the pipeline for generation.

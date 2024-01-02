@@ -51,6 +51,17 @@ If you want to run the inference/rendering based on the pretrained 3DGS avatars,
 ## Usage
 ```bash
 python launch.py --config configs/test.yaml --train --gpu 0 system.prompt_processor.prompt="A boy with a beanie wearing a hoodie and joggers"
+python launch.py --config configs/test.yaml --train --gpu 1 system.prompt_processor.prompt="A buddha"
+python launch.py --config configs/test.yaml --train --gpu 2 system.prompt_processor.prompt="A sexy teenage girl in a bikini"
+python launch.py --config configs/test.yaml --train --gpu 3 system.prompt_processor.prompt="A Western cowboy smoking a cigarette"
+python launch.py --config configs/test.yaml --train --gpu 4 system.prompt_processor.prompt="A girl who looks like a pig"
+python launch.py --config configs/test.yaml --train --gpu 5 system.prompt_processor.prompt="a woman wearing a short jean skirt, a cropped top, and a white sneaker"
+python launch.py --config configs/test.yaml --train --gpu 6 system.prompt_processor.prompt="Donald Trump"
+python launch.py --config configs/test.yaml --train --gpu 7 system.prompt_processor.prompt="A man in big shorts and a white vest"
+```
+
+```bash
+python launch.py --config configs/anydoor_test.yaml --train --gpu 3 system.prompt_processor.prompt="A_man_in_big_shorts_and_a_white_vest"
 ```
 
 ## Animation
@@ -109,6 +120,7 @@ For example, you can animate the "A boy with a beanie wearing a hoodie and jogge
 ```bash
 # play motion and save to .mp4 for "A boy with a beanie wearing a hoodie and joggers" case
 python animation.py --ply "content/sample.ply" --motion "content/Aeroplane_FW_part9.npz" --play
+python animation.py --ply "/mnt/disk_1/yixuan/HumanGaussianData/output/test2/An_old_lady_in_a_green_beret_in_a_cotton_coat_and_a_floral_skirt_with_purple_heels@20231216-000452/save/oldlady.ply" --motion "content/Aeroplane_FW_part9.npz" --play
 ```
 
 

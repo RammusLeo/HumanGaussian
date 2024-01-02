@@ -3,6 +3,7 @@ import math
 import random
 from dataclasses import dataclass, field
 
+import cv2
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
@@ -20,6 +21,7 @@ from threestudio.utils.ops import (
     get_rays,
 )
 from threestudio.utils.typing import *
+from threestudio.utils.data_utils import *
 
 import os
 import numpy as np
@@ -163,6 +165,8 @@ def convert_camera_pose(camera_pose):
 class RandomCameraDataModuleConfig:
     # height, width, and batch_size should be Union[int, List[int]]
     # but OmegaConf does not support Union of containers
+    viton_dir: str = "/mnt/disk_1/yixuan/AnyDoorData/VitonHD_test_sample"
+    dist_img: str = "01430_00"
     height: Any = 512
     width: Any = 512
     batch_size: Any = 1
@@ -296,6 +300,29 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         #     (1 - r) * self.cfg.eval_fovy_deg + r * self.cfg.fovy_range[0],
         #     (1 - r) * self.cfg.eval_fovy_deg + r * self.cfg.fovy_range[1],
         # ]
+
+    def preprocess_image(self):
+        '''
+        read dist cloth image with its mask
+
+        Outputs:
+        {
+            "HF Map": 224, 224, 3
+            "guidance img" 224, 224, 3
+        }
+        '''
+        ref_image_path = os.path.join(self.cfg.viton_dir, "cloth", self.cfg.dist_img+".jpg")
+        ref_mask_path = os.path.join(self.cfg.viton_dir, "cloth-mask", self.cfg.dist_img+".jpg")
+
+        ref_image = cv2.imread(ref_image_path)
+        ref_image = cv2.cvtColor(ref_image, cv2.COLOR_BGR2RGB)
+
+        ref_mask = (cv2.imread(ref_mask_path) > 128).astype(np.uint8)[:,:,0]
+
+        return ref_image, ref_mask
+        # tar_box_yyxx = get_bbox_from_mask(tar_mask)
+        # tar_box_yyxx = expand_bbox(tar_mask, tar_box_yyxx, ratio=[1.1,1.2])
+
 
     def collate(self, batch) -> Dict[str, Any]:
 
@@ -508,6 +535,9 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
         )  # FIXME: hard-coded near and far
         mvp_mtx: Float[Tensor, "B 4 4"] = get_mvp_matrix(c2w, proj_mtx)
 
+        # read dist images:
+        ref_image, ref_mask = self.preprocess_image()
+
         return {
             "mvp_mtx": mvp_mtx,
             "camera_positions": camera_positions,
@@ -519,7 +549,8 @@ class RandomCameraIterableDataset(IterableDataset, Updateable):
             "height": self.height,
             "width": self.width,
             "fovy":fovy,
-
+            "ref_image": ref_image,
+            "ref_mask": ref_mask
         }
 
 
@@ -615,6 +646,26 @@ class RandomCameraDataset(Dataset):
         self.elevation_deg, self.azimuth_deg = elevation_deg, azimuth_deg
         self.camera_distances = camera_distances
         self.fovy = fovy
+        self.ref_image, self.ref_mask = self.preprocess_image()
+
+    def preprocess_image(self):
+        '''
+        read dist cloth image with its mask
+
+        Outputs:
+        {
+            "HF Map": 224, 224, 3
+            "guidance img" 224, 224, 3
+        }
+        '''
+        ref_image_path = os.path.join(self.cfg.viton_dir, "cloth", self.cfg.dist_img+".jpg")
+        ref_mask_path = os.path.join(self.cfg.viton_dir, "cloth-mask", self.cfg.dist_img+".jpg")
+
+        ref_image = cv2.imread(ref_image_path)
+        ref_image = cv2.cvtColor(ref_image, cv2.COLOR_BGR2RGB)
+
+        ref_mask = (cv2.imread(ref_mask_path) > 128).astype(np.uint8)[:,:,0]
+        return ref_image, ref_mask
 
     def __len__(self):
         return self.n_views
@@ -632,6 +683,8 @@ class RandomCameraDataset(Dataset):
             "height": self.cfg.eval_height,
             "width": self.cfg.eval_width,
             "fovy":self.fovy[index],
+            "ref_image": self.ref_image,
+            "ref_mask": self.ref_mask
         }
 
     def collate(self, batch):

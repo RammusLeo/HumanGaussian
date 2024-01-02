@@ -348,7 +348,7 @@ class Skeleton:
             v0 = self.vertices[faces[:, 0]]
             v1 = self.vertices[faces[:, 1]]
             v2 = self.vertices[faces[:, 2]]
-            # face normals
+            # SC                                                                                                                                                                                          normals
             fnormals = np.cross(v1 - v0, v2 - v0)
             fnormals = fnormals / (
                 np.linalg.norm(fnormals, axis=1, keepdims=True) + 1e-20
@@ -946,7 +946,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--smplx_path",
         type=str,
-        default="smplx_models",
+        default="/mnt/disk_1/yixuan/HumanGaussianData/smplx/smplx_models",
         help="path to models folder (contains smplx/)",
     )
     parser.add_argument(

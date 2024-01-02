@@ -15,11 +15,11 @@ from threestudio.utils.ops import perpendicular_component
 from threestudio.utils.typing import *
 
 
-@threestudio.register("stable-diffusion-controlnet-guidance")
+@threestudio.register("anydoor-guidance")
 class StableDiffusionGuidance(BaseObject):
     @dataclass
     class Config(BaseObject.Config):
-        pretrained_model_name_or_path: str = "stabilityai/stable-diffusion-2-1-base"
+        pretrained_model_name_or_path: str = "stabilityai/stable-diffusion-2-base"
         enable_memory_efficient_attention: bool = False
         enable_sequential_cpu_offload: bool = False
         enable_attention_slicing: bool = False
@@ -48,8 +48,7 @@ class StableDiffusionGuidance(BaseObject):
         """Maximum number of batch items to evaluate guidance for (for debugging) and to save on disk. -1 means save all items."""
         max_items_eval: int = 4
 
-        # controlnet_model: str = "lllyasviel/control_v11p_sd15_openpose"
-        controlnet_model: str = "/mnt/disk_1/yixuan/AnyDoorData/anydoor_dict.pt"
+        controlnet_model: str = ""  #TODO: Add controlnet path
 
         vae_key: Optional[str] = None
 
@@ -146,16 +145,9 @@ class StableDiffusionGuidance(BaseObject):
 
         self.grad_clip_val: Optional[float] = None
 
-        # self.controlnet = ControlNetModel.from_pretrained(
-        #     self.cfg.controlnet_model, 
-        #     torch_dtype=self.weights_dtype
-        # ).to(self.device)
-
-        self.controlnet = ControlNetModel.from_single_file(
+        self.controlnet = ControlNetModel.from_pretrained(
             self.cfg.controlnet_model, 
-            config_file = './configs/original/anydoor.yaml',
             torch_dtype=self.weights_dtype
-            # use_safetensors=True,
         ).to(self.device)
 
         threestudio.info(f"Loaded Stable Diffusion!")
@@ -174,6 +166,7 @@ class StableDiffusionGuidance(BaseObject):
         encoder_hidden_states: Float[Tensor, "..."],
     ) -> Float[Tensor, "..."]:
         input_dtype = latents.dtype
+
         down_samples, mid_sample = self.controlnet(
             latents.to(self.weights_dtype),
             t.to(self.weights_dtype),
@@ -221,14 +214,13 @@ class StableDiffusionGuidance(BaseObject):
         control_image: Float[Tensor, "B C 512 512"],
         latents: Float[Tensor, "B 4 64 64"],
         t: Int[Tensor, "B"],
-        guidance_image: Float[Tensor, "B 3 224 224"],
         prompt_utils: PromptProcessorOutput,
         elevation: Float[Tensor, "B"],
         azimuth: Float[Tensor, "B"],
         camera_distances: Float[Tensor, "B"],
     ):
         batch_size = elevation.shape[0]
-        # print("compute_grad_anpg")
+
         # if prompt_utils.use_perp_neg:
         #     (
         #         text_embeddings,
@@ -268,9 +260,8 @@ class StableDiffusionGuidance(BaseObject):
 
         neg_guidance_weights = None
         text_embeddings = prompt_utils.get_text_embeddings(
-            elevation, azimuth, camera_distances, guidance_image, self.cfg.view_dependent_prompting
+            elevation, azimuth, camera_distances, self.cfg.view_dependent_prompting
         )
-        # import pdb; pdb.set_trace()
         # predict the noise residual with unet, NO grad!
         with torch.no_grad():
             # add noise
@@ -334,7 +325,7 @@ class StableDiffusionGuidance(BaseObject):
         camera_distances: Float[Tensor, "B"],
     ):
         batch_size = elevation.shape[0]
-        print("compute_grad_sds")
+
         # if prompt_utils.use_perp_neg:
         #     (
         #         text_embeddings,
@@ -373,11 +364,8 @@ class StableDiffusionGuidance(BaseObject):
         # else:
 
         neg_guidance_weights = None
-        # get img identity guidance, with dinov2
-        # use imginput in (224, 224, 3)
-
         text_embeddings = prompt_utils.get_text_embeddings(
-            elevation, azimuth, camera_distances, guidance_images, self.cfg.view_dependent_prompting
+            elevation, azimuth, camera_distances, self.cfg.view_dependent_prompting
         )
         text_embeddings = text_embeddings[:batch_size * 2]
         # predict the noise residual with unet, NO grad!
@@ -437,7 +425,7 @@ class StableDiffusionGuidance(BaseObject):
         camera_distances: Float[Tensor, "B"],
     ):
         batch_size = elevation.shape[0]
-        print("compute_grad_sjc")
+
         sigma = self.us[t]
         sigma = sigma.view(-1, 1, 1, 1)
 
@@ -532,7 +520,6 @@ class StableDiffusionGuidance(BaseObject):
         self,
         control_images: Float[Tensor, "B H W C"],
         rgb: Float[Tensor, "B H W C"],
-        guidance_images: Float[Tensor, "B H W C"],
         prompt_utils: PromptProcessorOutput,
         elevation: Float[Tensor, "B"],
         azimuth: Float[Tensor, "B"],
@@ -544,7 +531,6 @@ class StableDiffusionGuidance(BaseObject):
         batch_size = rgb.shape[0]
         
         control_images = control_images.permute(0, 3, 1, 2)
-        guidance_images = guidance_images.permute(0, 3, 1, 2)
         rgb_BCHW = rgb.permute(0, 3, 1, 2)
         latents: Float[Tensor, "B 4 64 64"]
         if rgb_as_latents:
@@ -572,18 +558,8 @@ class StableDiffusionGuidance(BaseObject):
                 control_images, latents, t, prompt_utils, elevation, azimuth, camera_distances
             )
         elif self.cfg.use_anpg:
-            # grad, guidance_eval_utils = self.compute_grad_anpg(
-            #     control_images, latents, t, guidance_images, prompt_utils, elevation, azimuth, camera_distances
-            # )
             grad, guidance_eval_utils = self.compute_grad_anpg(
-                control_image = control_images,
-                latents = latents, 
-                t = t,
-                guidance_image = guidance_images,
-                prompt_utils = prompt_utils, 
-                elevation = elevation,
-                azimuth = azimuth, 
-                camera_distances = camera_distances,
+                control_images, latents, t, prompt_utils, elevation, azimuth, camera_distances
             )
         else:
             grad, guidance_eval_utils = self.compute_grad_sds(
@@ -633,7 +609,6 @@ class StableDiffusionGuidance(BaseObject):
         use_perp_neg=False,
         neg_guidance_weights=None,
     ):
-        print("get_noise_pred")
         batch_size = latents_noisy.shape[0]
 
         if use_perp_neg:

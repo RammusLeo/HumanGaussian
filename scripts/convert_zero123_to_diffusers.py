@@ -1023,3 +1023,13 @@ if __name__ == "__main__":
         pipe.to(torch_dtype=torch.float16)
 
     pipe.save_pretrained(args.dump_path, safe_serialization=args.to_safetensors)
+
+
+'''
+python convert_zero123_to_diffusers.py \
+--checkpoint_path="/mnt/disk_1/yixuan/AnyDoorData/anydoor_dict.pt" \
+--original_config_file="/home/yixuan/zyx/AnyDoor/configs/anydoor.yaml" \
+--extract_ema=False \
+--device="cuda:7" \
+--dump_path="/mnt/disk_1/yixuan/AnyDoorData/anydoor_newformat." \
+'''

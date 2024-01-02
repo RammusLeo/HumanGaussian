@@ -1,10 +1,13 @@
-name: "test3"
+name: "controlnet_test1"
 tag: "${rmspace:${system.prompt_processor.prompt},_}"
 exp_root_dir: "/mnt/disk_1/yixuan/HumanGaussianData/output"
 seed: 0
+# resume: "/mnt/disk_1/yixuan/HumanGaussianData/output/test2/A_man_in_big_shorts_and_a_white_vest@20231216-001309/ckpts/epoch=0-step=3600.ckpt"
  
 data_type: "random-camera-datamodule"
 data:
+  viton_dir: "/mnt/disk_1/yixuan/AnyDoorData/VitonHD_test_sample"
+  dist_img: "01430_00"
   batch_size: 4
   eval_camera_distance: 2.0
   camera_distance_range: [1.5, 2.0]
@@ -35,7 +38,8 @@ data:
 system_type: "gaussiandreamer-system"
 system:
   radius: ${data.eval_camera_distance}
-  texture_structure_joint: true
+  texture_structure_joint: false
+  controlnet: true
   smplx_path: "/mnt/disk_1/yixuan/HumanGaussianData/smplx/smplx_models"
   disable_hand_densification: false
   pts_num: 100000
@@ -52,31 +56,33 @@ system:
   apose: true
   bg_white: false
 
-  prompt_processor_type: "texture-structure-prompt-processor"
+  prompt_processor_type: "anydoor-prompt-processor"
   prompt_processor:
     use_perp_neg: false
-    pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-base"
-    negative_prompt: "shadow, dark face, colorful hands, eyeglass, glasses, (deformed iris, deformed pupils, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime:1.4), text, close up, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck"
-    prompt: ???
+    pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
+    # negative_prompt: "shadow, dark face, colorful hands, eyeglass, glasses, (deformed iris, deformed pupils, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime:1.4), text, close up, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck"
+    # prompt: ???
 
-  guidance_type: "dual-branch-guidance"
+  guidance_type: "stable-diffusion-controlnet-guidance"
   guidance:
-    pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-base"
-    model_key: "/mnt/disk_1/yixuan/HumanGaussianData/texture_structure_joint"
+    # pretrained_model_name_or_path: "/home/yixuan/.cache/huggingface/hub/models--stabilityai--stable-diffusion-2-1-base/"
+    pretrained_model_name_or_path: "stabilityai/stable-diffusion-2-1-base"
+    # model_key: "/mnt/disk_1/yixuan/HumanGaussianData/control_sd15_openpose.pth"
+    # vae_key: "/home/yixuan/.cache/huggingface/hub/models--stabilityai--sd-vae-ft-mse/"
     vae_key: "stabilityai/sd-vae-ft-mse"
     guidance_scale: 7.5
     weighting_strategy: sds
     min_step_percent: 0.02
     max_step_percent: 0.98
     grad_clip: [0,1.5,2.0,1000]
-    lw_depth: 0.5
-    guidance_rescale: 0.75
-    original_size: 1024
-    target_size: 1024
+    # lw_depth: 0.5
+    # guidance_rescale: 0.75
+    # original_size: 1024
+    # target_size: 1024
     use_anpg: true
     enable_memory_efficient_attention: true
-    grad_clip_pixel: true
-    grad_clip_threshold: 1.0
+    # grad_clip_pixel: true
+    # grad_clip_threshold: 1.0
 
   loggers:
     wandb:

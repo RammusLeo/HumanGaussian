@@ -20,6 +20,8 @@ import numpy as np
 # from shap_e.models.download import load_model, load_config
 # from shap_e.util.notebooks import create_pan_cameras, decode_latent_images, gif_widget
 # from shap_e.util.notebooks import decode_latent_mesh
+import cv2
+from threestudio.utils.data_utils import *
 import io  
 from PIL import Image  
 # import open3d as o3d
@@ -27,6 +29,7 @@ from PIL import Image
 from threestudio.utils.poser import Skeleton
 import torch.nn.functional as F
 
+'''
 def load_ply(path,save_path):
     C0 = 0.28209479177387814
     def SH2RGB(sh):
@@ -47,6 +50,7 @@ def load_ply(path,save_path):
     point_cloud.points = o3d.utility.Vector3dVector(xyz)
     point_cloud.colors = o3d.utility.Vector3dVector(color)
     o3d.io.write_point_cloud(save_path, point_cloud)
+'''
 
 def storePly(path, xyz, rgb):
     # Define the dtype for the structured array
@@ -138,6 +142,7 @@ class GaussianDreamer(BaseLift3DSystem):
             with open(output_file, 'wb') as file:  
                 file.write(writer.read())
     
+    '''
     def shape(self):
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -216,6 +221,78 @@ class GaussianDreamer(BaseLift3DSystem):
         all_coords = np.concatenate([all_coords,coords],axis=0)
         all_rgb = np.concatenate([all_rgb,rgb],axis=0)
         return all_coords,all_rgb
+    '''
+    def preprocess_images(self,ref_image, ref_mask, tar_image, tar_box_yyxx=(256, 768, 256, 768)):
+        ref_box_yyxx = get_bbox_from_mask(ref_mask)
+
+        # ref filter mask 
+        ref_mask_3 = np.stack([ref_mask,ref_mask,ref_mask],-1)
+        masked_ref_image = ref_image * ref_mask_3 + np.ones_like(ref_image) * 255 * (1-ref_mask_3)
+
+        y1,y2,x1,x2 = ref_box_yyxx
+        masked_ref_image = masked_ref_image[y1:y2,x1:x2,:]
+        ref_mask = ref_mask[y1:y2,x1:x2]
+
+
+        ratio = np.random.randint(12, 13) / 10
+        masked_ref_image, ref_mask = expand_image_mask(masked_ref_image, ref_mask, ratio=ratio)
+        ref_mask_3 = np.stack([ref_mask,ref_mask,ref_mask],-1)
+
+        # to square and resize
+        masked_ref_image = pad_to_square(masked_ref_image, pad_value = 255, random = False)
+        masked_ref_image = cv2.resize(masked_ref_image, (224,224) ).astype(np.uint8)
+
+        ref_mask_3 = pad_to_square(ref_mask_3 * 255, pad_value = 0, random = False)
+        ref_mask_3 = cv2.resize(ref_mask_3, (224,224) ).astype(np.uint8)
+        ref_mask = ref_mask_3[:,:,0]
+
+        # ref aug 
+        masked_ref_image_aug = masked_ref_image #aug_data(masked_ref_image) 
+
+        # collage aug 
+        masked_ref_image_compose, ref_mask_compose = masked_ref_image, ref_mask #aug_data_mask(masked_ref_image, ref_mask) 
+        masked_ref_image_aug = masked_ref_image_compose.copy()
+        # masked_ref_image_aug = cv2.resize(masked_ref_image_aug.astype(np.uint8), (512,512))
+        # masked_ref_image_aug = masked_ref_image_aug  / 255 
+
+        tar_box_yyxx_crop =  expand_bbox(tar_image, tar_box_yyxx, ratio=[1.5, 3])    #1.2 1.6
+        tar_box_yyxx_crop = box2squre(tar_image, tar_box_yyxx_crop) # crop box
+        y1,y2,x1,x2 = tar_box_yyxx_crop
+
+        cropped_target_image = tar_image[y1:y2,x1:x2,:]
+        tar_box_yyxx = box_in_box(tar_box_yyxx, tar_box_yyxx_crop)
+        y1,y2,x1,x2 = tar_box_yyxx
+
+        # collage
+        ref_image_collage = sobel(masked_ref_image_compose, ref_mask_compose/255)
+        ref_image_collage = cv2.resize(ref_image_collage, (x2-x1, y2-y1))
+        ref_mask_compose = cv2.resize(ref_mask_compose.astype(np.uint8), (x2-x1, y2-y1))
+        ref_mask_compose = (ref_mask_compose > 128).astype(np.uint8)
+
+        collage = cropped_target_image.copy() 
+        collage[y1:y2,x1:x2,:] = ref_image_collage
+
+        collage_mask = cropped_target_image.copy() * 0.0
+        collage_mask[y1:y2,x1:x2,:] = 1.0
+
+        # the size before pad
+        H1, W1 = collage.shape[0], collage.shape[1]
+        # cropped_target_image = pad_to_square(cropped_target_image, pad_value = 0, random = False).astype(np.uint8)
+        collage = pad_to_square(collage, pad_value = 0, random = False).astype(np.uint8)
+        collage_mask = pad_to_square(collage_mask, pad_value = -1, random = False).astype(np.uint8)
+
+        # the size after pad
+        H2, W2 = collage.shape[0], collage.shape[1]
+        # cropped_target_image = cv2.resize(cropped_target_image, (512,512)).astype(np.float32)
+        collage = cv2.resize(collage, (512,512)).astype(np.float32)
+        collage_mask  = (cv2.resize(collage_mask, (512,512)).astype(np.float32) > 0.5).astype(np.float32)
+
+        # cropped_target_image = cropped_target_image / 127.5 - 1.0
+        collage = collage / 127.5 - 1.0 
+        collage = np.concatenate([collage, collage_mask[:,:,:1]  ] , -1)
+        collage = collage*127.5+127.5
+
+        return masked_ref_image_aug.copy(), collage.copy()
     
     def pcb(self):
         # Since this data set has no colmap data, we start with random points
@@ -239,6 +316,8 @@ class GaussianDreamer(BaseLift3DSystem):
         images = []
         depths = []
         pose_images = []
+        control_images = []
+        guidance_images = []
         self.viewspace_point_list = []
 
         for id in range(batch['c2w'].shape[0]):
@@ -264,6 +343,15 @@ class GaussianDreamer(BaseLift3DSystem):
             image = image.permute(1, 2, 0)
             images.append(image)
             depths.append(depth)
+            
+            tar_img = (image*225).cpu().detach().numpy().astype(np.uint8)
+            if len(batch["ref_image"].shape)>3:
+                guidance_img, control_img  = self.preprocess_images(batch["ref_image"][0].cpu().detach().numpy(), batch["ref_mask"][0].cpu().detach().numpy(),tar_img)
+            else:
+                guidance_img, control_img  = self.preprocess_images(batch["ref_image"], batch["ref_mask"],tar_img)
+
+            control_images.append(torch.from_numpy(control_img).float().cuda() )
+            guidance_images.append(torch.from_numpy(guidance_img).float().cuda() )
 
             if self.texture_structure_joint:
                 backview = abs(batch['azimuth'][id]) > 120 * np.pi / 180
@@ -286,6 +374,9 @@ class GaussianDreamer(BaseLift3DSystem):
         depths = torch.stack(depths, 0)
         pose_images = torch.stack(pose_images, 0)
 
+        control_images = torch.stack(control_images, 0)
+        guidance_images = torch.stack(guidance_images, 0)
+
         self.visibility_filter = self.radii > 0.0
 
         # mask near-hand points from visibility_filter, since we don't want to densify them
@@ -300,6 +391,8 @@ class GaussianDreamer(BaseLift3DSystem):
         render_pkg["depth"] = depths
         render_pkg['pose'] = pose_images
         render_pkg["opacity"] = depths / (depths.max() + 1e-5)
+        render_pkg["control_images"] = control_images
+        render_pkg['guidance_images'] = guidance_images
 
         return {
             **render_pkg,
@@ -331,7 +424,9 @@ class GaussianDreamer(BaseLift3DSystem):
         depth_max = torch.amax(depth_images, dim=[1, 2, 3], keepdim=True)
         depth_images = (depth_images - depth_min) / (depth_max - depth_min + 1e-10)# to [0, 1]
         depth_images = depth_images.repeat(1, 1, 1, 3)# to 3-channel
-        control_images = out['pose']
+        # control_images = out['pose']
+        control_images = out['control_images']
+        guidance_images = out['guidance_images']
 
         # guidance_eval = (self.true_global_step % 200 == 0)
         guidance_eval = False
@@ -343,7 +438,7 @@ class GaussianDreamer(BaseLift3DSystem):
             )
         elif self.controlnet:
             guidance_out = self.guidance(
-                control_images, images, prompt_utils, **batch, 
+                control_images, images, guidance_images, prompt_utils, **batch, 
                 rgb_as_latents=False, guidance_eval=guidance_eval
             )
         else:
